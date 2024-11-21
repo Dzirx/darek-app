@@ -4,6 +4,8 @@ import 'package:path/path.dart';
 import '../database/models/meeting.dart';
 import '../database/models/sale.dart';
 import '../database/models/user.dart';
+import '../database/models/client.dart';
+import '../database/models/client_note.dart';
 
 class DatabaseHelper {
   static final DatabaseHelper instance = DatabaseHelper._init();
@@ -64,6 +66,42 @@ class DatabaseHelper {
         FOREIGN KEY (userId) REFERENCES users (id)
       )
     ''');
+
+        await db.execute('''
+      CREATE TABLE clients(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        company TEXT,
+        address TEXT,
+        phoneNumber TEXT,
+        email TEXT,
+        userId INTEGER NOT NULL,
+        createdAt TEXT NOT NULL,
+        updatedAt TEXT NOT NULL,
+        category TEXT NOT NULL,
+        isActive INTEGER NOT NULL,
+        FOREIGN KEY (userId) REFERENCES users (id)
+      )
+    ''');
+
+        await db.execute('''
+      CREATE TABLE client_notes(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        clientId INTEGER NOT NULL,
+        content TEXT NOT NULL,
+        createdAt TEXT NOT NULL,
+        userId INTEGER NOT NULL,
+        type TEXT NOT NULL,
+        importance TEXT NOT NULL,
+        tags TEXT,
+        FOREIGN KEY (clientId) REFERENCES clients (id),
+        FOREIGN KEY (userId) REFERENCES users (id)
+      )
+    ''');
+
+    await db.execute('CREATE INDEX idx_client_notes_client_id ON client_notes(clientId)');
+    await db.execute('CREATE INDEX idx_client_notes_created_at ON client_notes(createdAt)');
+    await db.execute('CREATE INDEX idx_clients_name ON clients(name)');
   }
 
   // Metody dla spotkań
@@ -211,4 +249,107 @@ class DatabaseHelper {
 
     return maps.map((map) => Meeting.fromMap(map)).toList();
   }
+
+    Future<int> createClient(Client client) async {
+    final db = await database;
+    return await db.insert('clients', client.toMap());
+  }
+
+  Future<List<Client>> searchClients(String query, int userId) async {
+    final db = await database;
+    final List<Map<String, dynamic>> maps = await db.query(
+      'clients',
+      where: 'userId = ? AND (name LIKE ? OR company LIKE ?)',
+      whereArgs: [userId, '%$query%', '%$query%'],
+      orderBy: 'name ASC',
+    );
+    return maps.map((map) => Client.fromMap(map)).toList();
+  }
+
+  Future<List<Client>> getRecentClients(int userId, {int limit = 10}) async {
+    final db = await database;
+    final List<Map<String, dynamic>> maps = await db.rawQuery('''
+      SELECT DISTINCT c.*
+      FROM clients c
+      LEFT JOIN client_notes n ON c.id = n.clientId
+      WHERE c.userId = ?
+      GROUP BY c.id
+      ORDER BY MAX(COALESCE(n.createdAt, c.updatedAt)) DESC
+      LIMIT ?
+    ''', [userId, limit]);
+    return maps.map((map) => Client.fromMap(map)).toList();
+  }
+
+  // Metody dla notatek
+  Future<int> createNote(ClientNote note) async {
+    final db = await database;
+    return await db.insert('client_notes', note.toMap());
+  }
+
+  Future<List<ClientNote>> getNotesForClient(int clientId) async {
+    final db = await database;
+    final List<Map<String, dynamic>> maps = await db.query(
+      'client_notes',
+      where: 'clientId = ?',
+      whereArgs: [clientId],
+      orderBy: 'createdAt DESC',
+    );
+    return maps.map((map) => ClientNote.fromMap(map)).toList();
+  }
+
+  Future<List<ClientNote>> searchNotes(String query, int userId) async {
+    final db = await database;
+    final List<Map<String, dynamic>> maps = await db.rawQuery('''
+      SELECT n.*
+      FROM client_notes n
+      JOIN clients c ON n.clientId = c.id
+      WHERE n.userId = ? AND (
+        n.content LIKE ? OR
+        n.tags LIKE ? OR
+        c.name LIKE ?
+      )
+      ORDER BY n.createdAt DESC
+    ''', [userId, '%$query%', '%$query%', '%$query%']);
+    return maps.map((map) => ClientNote.fromMap(map)).toList();
+  }
+
+  Future<List<String>> getAllTags(int userId) async {
+    final db = await database;
+    final List<Map<String, dynamic>> maps = await db.query(
+      'client_notes',
+      where: 'userId = ?',
+      whereArgs: [userId],
+    );
+    
+    final Set<String> tags = {};
+    for (var map in maps) {
+      final note = ClientNote.fromMap(map);
+      tags.addAll(note.tags);
+    }
+    return tags.toList()..sort();
+  }
+
+  Future<List<ClientNote>> getRecentNotes(int userId, {int limit = 20}) async {
+    final db = await database;
+    final List<Map<String, dynamic>> maps = await db.query(
+      'client_notes',
+      where: 'userId = ?',
+      whereArgs: [userId],
+      orderBy: 'createdAt DESC',
+      limit: limit,
+    );
+    return maps.map((map) => ClientNote.fromMap(map)).toList();
+  }
+
+  Future<List<ClientNote>> getNotesByType(int clientId, NoteType type) async {
+    final db = await database;
+    final List<Map<String, dynamic>> maps = await db.query(
+      'client_notes',
+      where: 'clientId = ? AND type = ?',
+      whereArgs: [clientId, type.toString()],
+      orderBy: 'createdAt DESC',
+    );
+    return maps.map((map) => ClientNote.fromMap(map)).toList();
+  }
 }
+
