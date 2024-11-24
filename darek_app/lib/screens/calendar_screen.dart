@@ -166,6 +166,66 @@ class _CalendarScreenState extends State<CalendarScreen> {
   }
 
   void _showMeetingDetails(BuildContext context, Meeting meeting) {
-    // TODO: Implement meeting details view
-  }
+  showDialog(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: const Text('Szczegóły spotkania'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Tytuł: ${meeting.title}'),
+          const SizedBox(height: 8),
+          Text('Data: ${DateFormat('dd.MM.yyyy HH:mm').format(meeting.dateTime)}'),
+          const SizedBox(height: 8),
+          if (meeting.description.isNotEmpty)
+            Text('Opis: ${meeting.description}'),
+        ],
+      ),
+      actions: [
+        // Przycisk usuwania
+        TextButton(
+          onPressed: () async {
+            // Potwierdzenie usunięcia
+            final confirmed = await showDialog<bool>(
+              context: context,
+              builder: (context) => AlertDialog(
+                title: const Text('Potwierdź usunięcie'),
+                content: const Text('Czy na pewno chcesz usunąć to spotkanie?'),
+                actions: [
+                  TextButton(
+                    child: const Text('Anuluj'),
+                    onPressed: () => Navigator.of(context).pop(false),
+                  ),
+                  TextButton(
+                    child: const Text('Usuń'),
+                    onPressed: () => Navigator.of(context).pop(true),
+                  ),
+                ],
+              ),
+            );
+
+            if (confirmed == true) {
+              await DatabaseHelper.instance.deleteMeeting(meeting.id!);
+              if (!context.mounted) return;
+              Navigator.of(context).pop(); // Zamknij szczegóły
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Spotkanie zostało usunięte')),
+              );
+              setState(() {
+                _loadMeetings(); // Odśwież listę spotkań
+              });
+            }
+          },
+          style: TextButton.styleFrom(foregroundColor: Colors.red),
+          child: const Text('Usuń'),
+        ),
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Zamknij'),
+        ),
+      ],
+    ),
+  );
+}
 }

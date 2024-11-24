@@ -1,11 +1,11 @@
-// lib/screens/home_screen.dart
-
 import 'package:flutter/material.dart';
 import '../database/models/user.dart';
 import '../widgets/speech_recognition_widget.dart';
 import '../screens/calendar_screen.dart';
+import '../screens/client_notes_screen.dart';  
 import '../screens/login_screen.dart';
 import '../services/auth_service.dart';
+import '../screens/sales_screen.dart';
 
 class HomeScreen extends StatelessWidget {
   final User user;
@@ -35,37 +35,77 @@ class HomeScreen extends StatelessWidget {
           ),
         ],
       ),
-      body: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          children: [
-            Wrap(
-              spacing: 16,
-              runSpacing: 16,
-              children: [
-                _buildMenuCard(
-                  context: context,
-                  icon: Icons.calendar_month,
-                  title: 'Kalendarz',
-                  onTap: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => CalendarScreen(userId: user.id!),
-                      ),
-                    );
-                  },
+      body: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            children: [
+              // Karty menu w scrollowanym kontenerze
+              SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Row(
+                  children: [
+                    _buildMenuCard(
+                      context: context,
+                      icon: Icons.calendar_month,
+                      title: 'Kalendarz',
+                      subtitle: 'Spotkania i terminy',
+                      color: Colors.blue,
+                      onTap: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => CalendarScreen(userId: user.id!),
+                          ),
+                        );
+                      },
+                    ),
+                    const SizedBox(width: 16),
+                    _buildMenuCard(
+                      context: context,
+                      icon: Icons.note_alt,
+                      title: 'Notatki',
+                      subtitle: 'Informacje o klientach',
+                      color: Colors.green,
+                      onTap: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => ClientNotesScreen(userId: user.id!),
+                          ),
+                        );
+                      },
+                    ),
+                    const SizedBox(width: 16),
+                    _buildMenuCard(
+                      context: context,
+                      icon: Icons.monetization_on,
+                      title: 'Sprzedaż',
+                      subtitle: 'Historia sprzedaży',
+                      color: Colors.orange,
+                      onTap: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => SalesScreen(userId: user.id!),
+                          ),
+                        );
+                      },
+                    ),
+                  ],
                 ),
-                // Add more menu cards here
-              ],
-            ),
-            const SizedBox(height: 16),
-            Expanded(
-              child: SpeechRecognitionWidget(
-                userId: user.id!,
               ),
-            ),
-          ],
+              const SizedBox(height: 16),
+              // Widget rozpoznawania mowy w pozostałej przestrzeni
+              Expanded(
+                child: SingleChildScrollView(
+                  child: SpeechRecognitionWidget(
+                    userId: user.id!,
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -75,30 +115,53 @@ class HomeScreen extends StatelessWidget {
     required BuildContext context,
     required IconData icon,
     required String title,
+    required String subtitle,
+    required Color color,
     required VoidCallback onTap,
   }) {
     return Card(
+      elevation: 4,
       child: InkWell(
         onTap: onTap,
+        borderRadius: BorderRadius.circular(8),
         child: Container(
-          width: 150,
-          height: 150,
-          padding: const EdgeInsets.all(16),
+          width: 140, // Zmniejszona szerokość
+          height: 140, // Zmniejszona wysokość
+          padding: const EdgeInsets.all(12), // Zmniejszony padding
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(
-                icon,
-                size: 48,
-                color: Theme.of(context).primaryColor,
+              Container(
+                padding: const EdgeInsets.all(8), // Zmniejszony padding
+                decoration: BoxDecoration(
+                  color: color.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Icon(
+                  icon,
+                  size: 36, // Zmniejszona ikona
+                  color: color,
+                ),
               ),
-              const SizedBox(height: 8),
+              const SizedBox(height: 8), // Zmniejszony spacing
               Text(
                 title,
                 style: const TextStyle(
-                  fontSize: 16,
+                  fontSize: 14, // Zmniejszona czcionka
                   fontWeight: FontWeight.bold,
                 ),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 4),
+              Text(
+                subtitle,
+                style: TextStyle(
+                  fontSize: 11, // Zmniejszona czcionka
+                  color: Colors.grey[600],
+                ),
+                textAlign: TextAlign.center,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
               ),
             ],
           ),

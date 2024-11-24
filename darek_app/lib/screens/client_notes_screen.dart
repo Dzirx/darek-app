@@ -284,9 +284,153 @@ class _ClientNotesScreenState extends State<ClientNotesScreen> {
     }
   }
 
+  
+
   Future<void> _showAddClientDialog(BuildContext context) async {
-    // TODO: Implement add client dialog
+  final nameController = TextEditingController();
+  final companyController = TextEditingController();
+  final phoneController = TextEditingController();
+  final emailController = TextEditingController();
+  final addressController = TextEditingController();
+  ClientCategory selectedCategory = ClientCategory.standard;
+
+  await showDialog(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: const Text('Dodaj nowego klienta'),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: nameController,
+              decoration: const InputDecoration(
+                labelText: 'Nazwa/Nazwisko *',
+                hintText: 'Wprowadź nazwę klienta',
+              ),
+            ),
+            const SizedBox(height: 8),
+            TextField(
+              controller: companyController,
+              decoration: const InputDecoration(
+                labelText: 'Firma',
+                hintText: 'Wprowadź nazwę firmy',
+              ),
+            ),
+            const SizedBox(height: 8),
+            TextField(
+              controller: phoneController,
+              decoration: const InputDecoration(
+                labelText: 'Telefon',
+                hintText: 'Wprowadź numer telefonu',
+              ),
+              keyboardType: TextInputType.phone,
+            ),
+            const SizedBox(height: 8),
+            TextField(
+              controller: emailController,
+              decoration: const InputDecoration(
+                labelText: 'Email',
+                hintText: 'Wprowadź adres email',
+              ),
+              keyboardType: TextInputType.emailAddress,
+            ),
+            const SizedBox(height: 8),
+            TextField(
+              controller: addressController,
+              decoration: const InputDecoration(
+                labelText: 'Adres',
+                hintText: 'Wprowadź adres',
+              ),
+              maxLines: 2,
+            ),
+            const SizedBox(height: 16),
+            DropdownButtonFormField<ClientCategory>(
+              value: selectedCategory,
+              decoration: const InputDecoration(
+                labelText: 'Kategoria',
+              ),
+              items: ClientCategory.values.map((category) {
+                return DropdownMenuItem<ClientCategory>(
+                  value: category,
+                  child: Text(_getCategoryName(category)),
+                );
+              }).toList(),
+              onChanged: (value) {
+                selectedCategory = value!;
+              },
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Anuluj'),
+        ),
+        TextButton(
+          onPressed: () async {
+            if (nameController.text.isEmpty) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('Nazwa klienta jest wymagana'),
+                  backgroundColor: Colors.red,
+                ),
+              );
+              return;
+            }
+
+            final client = Client(
+              name: nameController.text,
+              company: companyController.text.isEmpty ? null : companyController.text,
+              phoneNumber: phoneController.text.isEmpty ? null : phoneController.text,
+              email: emailController.text.isEmpty ? null : emailController.text,
+              address: addressController.text.isEmpty ? null : addressController.text,
+              userId: widget.userId,
+              category: selectedCategory,
+              createdAt: DateTime.now(),
+              updatedAt: DateTime.now(),
+            );
+
+            try {
+              await _dbHelper.createClient(client);
+              if (!context.mounted) return;
+              Navigator.of(context).pop();
+              _loadClients(); // Odśwież listę klientów
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('Klient został dodany pomyślnie'),
+                  backgroundColor: Colors.green,
+                ),
+              );
+            } catch (e) {
+              if (!context.mounted) return;
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text('Błąd podczas dodawania klienta: $e'),
+                  backgroundColor: Colors.red,
+                ),
+              );
+            }
+          },
+          child: const Text('Dodaj'),
+        ),
+      ],
+    ),
+  );
+}
+
+// Dodaj też pomocniczą metodę do wyświetlania nazw kategorii:
+String _getCategoryName(ClientCategory category) {
+  switch (category) {
+    case ClientCategory.vip:
+      return 'VIP';
+    case ClientCategory.standard:
+      return 'Standardowy';
+    case ClientCategory.inactive:
+      return 'Nieaktywny';
   }
+}
 }
 
 class _ClientNotesView extends StatelessWidget {
