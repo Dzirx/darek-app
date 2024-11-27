@@ -21,7 +21,7 @@ class GPTAssistantService {
   Future<void> _initTts() async {
     try {
       await _tts.setLanguage('pl-PL');
-      await _tts.setSpeechRate(0.5);
+      await _tts.setSpeechRate(0.6);
       await _tts.setPitch(1.0);
       await _tts.setVolume(1.0);
       
@@ -62,76 +62,54 @@ class GPTAssistantService {
           'messages': [
             {
               'role': 'system',
-              'content': '''
-                      Jesteś asystentem kalendarza dla handlowca. 
-                      Rozumiesz język polski i odpowiadasz po polsku.
-                      
-                      WAŻNE ZASADY:
-                      1. Zawsze odpowiadaj w formacie JSON
-                      2. Bądź krótki i zwięzły
-                      3. Nie dodawaj zbędnych informacji
-                      
-                      Przykłady odpowiedzi:
-                      
-                      Dla "umów spotkanie z Ela":
-                      {
-                        "action": "add_meeting",
-                        "parameters": {
-                          "client": "Ela",
-                          "date": "2024-01-24",
-                          "time": "15:00",
-                          "description": ""
-                        },
-                        "response": "Umówiłem spotkanie z Elą na jutro na 15:00"
-                      }
+                  'content': '''
+                  Jesteś asystentem kalendarza dla handlowca. 
+                  Rozumiesz język polski i odpowiadasz po polsku.
 
+                  WAŻNE ZASADY:
+                  1. Zawsze odpowiadaj w formacie JSON
+                  2. Bądź krótki i zwięzły
+                  3. Nie dodawaj zbędnych informacji
 
-                      Dla "usuń spotkanie z Ela na jutro" lub "odwołaj spotkanie z Ela na jutro":
-                      {
-                        "action": "delete_meeting",
-                        "parameters": {
-                          "client": "Ela",
-                          "date": "2024-01-24"
-                        },
-                        "response": "Usunąłem spotkanie z Elą zaplanowane na jutro"
-                      }
+                  USUWANIE SPOTKAŃ:
+                  - Zawsze wymagaj dokładnej godziny
+                  - Format czasu musi być 24h (np. "15:30")
+                  {
+                    "action": "delete_meeting",
+                    "parameters": {
+                      "date": "YYYY-MM-DD",
+                      "time": "HH:mm"
+                    },
+                    "response": "Usuwam spotkanie z dnia X o godzinie Y"
+                  }
 
+                  SPRAWDZANIE SPOTKAŃ:
+                  {
+                    "action": "check_meetings",
+                    "parameters": {
+                      "date": "YYYY-MM-DD"
+                    },
+                    "response": "Sprawdzam spotkania"
+                  }
 
-                      Dla "umów spotkanie z Ela na temat sprzedaży":
-                      {
-                        "action": "add_meeting",
-                        "parameters": {
-                          "client": "Ela",
-                          "date": "2024-01-24",
-                          "time": "15:00",
-                          "description": "Temat: sprzedaż"
-                        },
-                        "response": "Umówiłem spotkanie z Elą na jutro na 15:00 "
-                      }
-                      
+                  DODAWANIE SPOTKAŃ:
+                  {
+                    "action": "add_meeting",
+                    "parameters": {
+                      "client": "Nazwa",
+                      "date": "YYYY-MM-DD",
+                      "time": "HH:mm",
+                      "description": "treść"
+                    },
+                    "response": "Dodano spotkanie"
+                  }
 
-                      Dla "umów spotkanie biznesowe":
-                      {
-                        "action": "add_meeting",
-                        "parameters": {
-                          "client": "",
-                          "date": "2024-01-24",
-                          "time": "15:00",
-                          "description": "Temat: sprzedaż"
-                        },
-                        "response": "Umówiłem spotkanie biznesowe"
-                      }
-
-
-                      Dla "jakie mam jutro spotkania":
-                      {
-                        "action": "check_meetings",
-                        "parameters": {
-                          "date": "2024-01-24"
-                        },
-                        "response": "Sprawdzam spotkania na jutro"
-                      }
-                    '''
+                  PRZYKŁADY:
+                  - "usuń spotkanie na jutro na 15:30"
+                  - "usuń spotkanie z Kowalskim na dziś na 22:00"
+                  - "jakie mam spotkania jutro"
+                  - "umów spotkanie z Kowalskim na jutro na 14:00"
+                  '''
             },
             {
               'role': 'user',
@@ -259,29 +237,52 @@ class GPTAssistantService {
 
   Future<void> _deleteMeeting(Map<String, dynamic> params, int userId) async {
   try {
-    final date = DateTime.parse(params['date']);
-    final client = params['client'];
+    final requestedDate = DateTime.parse(params['date']);
+    final requestedTime = params['time']?.split(':') ?? [];
     
     // Pobierz spotkania na dany dzień
-    final meetings = await _dbHelper.getMeetingsForDay(date, userId);
+    final meetings = await _dbHelper.getMeetingsForDay(requestedDate, userId);
     
-    // Znajdź spotkanie z danym klientem
-    final meetingsToDelete = meetings.where(
-      (meeting) => meeting.title.toLowerCase().contains(client.toLowerCase())
-    ).toList();
-    
-    if (meetingsToDelete.isNotEmpty) {
-      // Usuń znalezione spotkanie
-      await _dbHelper.deleteMeeting(meetingsToDelete.first.id!);
-      await _speak('Spotkanie zostało usunięte');
+    // Jeśli podano konkretną godzinę
+    if (requestedTime.length == 2) {
+      final targetHour = int.parse(requestedTime[0]);
+      final targetMinute = int.parse(requestedTime[1]);
+      
+      // Znajdź spotkanie o dokładnie tej godzinie
+      final matchingMeetings = meetings.where(
+        (meeting) => 
+          meeting.dateTime.hour == targetHour && 
+          meeting.dateTime.minute == targetMinute
+      ).toList();
+      
+      if (matchingMeetings.isNotEmpty) {
+        await _dbHelper.deleteMeeting(matchingMeetings.first.id!);
+        await _speak('Spotkanie na godzinę ${targetHour.toString().padLeft(2, '0')}:${targetMinute.toString().padLeft(2, '0')} zostało usunięte');
+      } else {
+        await _speak('Nie znaleziono spotkania na wskazaną godzinę');
+      }
     } else {
-      await _speak('Nie znaleziono spotkania z tym klientem na podany dzień');
+      // Jeśli nie podano godziny, pokaż listę spotkań do wyboru
+      if (meetings.isEmpty) {
+        await _speak('Nie znaleziono żadnych spotkań w tym dniu');
+        return;
+      }
+
+      // Posortuj spotkania według godziny
+      meetings.sort((a, b) => a.dateTime.compareTo(b.dateTime));
+      
+      // Przygotuj listę spotkań do odczytania
+      String meetingsList = 'Znalezione spotkania:\n';
+      for (var meeting in meetings) {
+        meetingsList += '${DateFormat('HH:mm').format(meeting.dateTime)} - ${meeting.title}\n';
+      }
+      
+      await _speak('$meetingsList\nPowiedz godzinę spotkania, które chcesz usunąć');
     }
   } catch (e) {
-    print('Error deleting meeting: $e');
-    await _speak('Wystąpił błąd podczas usuwania spotkania');
+    await _speak('Wystąpił błąd podczas usuwania spotkania: $e');
   }
-  }
+}
 
   Future<void> _checkNotes(Map<String, dynamic> params, int userId) async {
     final clientName = params['client'];
@@ -417,29 +418,29 @@ class GPTAssistantService {
 
     // Zbuduj prompt z kontekstem
     return '''
-Aktualny kontekst:
-Data i godzina: ${formatter.format(now)} ${timeFormatter.format(now)}
+      Aktualny kontekst:
+      Data i godzina: ${formatter.format(now)} ${timeFormatter.format(now)}
 
-Nadchodzące spotkania:
-${upcomingMeetings.isEmpty ? 'Brak nadchodzących spotkań' : upcomingMeetings.map((m) => 
-  "- ${m['date']} ${m['time']}: ${m['title']}"
-).join('\n')}
+      Nadchodzące spotkania:
+      ${upcomingMeetings.isEmpty ? 'Brak nadchodzących spotkań' : upcomingMeetings.map((m) => 
+        "- ${m['date']} ${m['time']}: ${m['title']}"
+      ).join('\n')}
 
-Ostatnie notatki:
-${recentNotes.isEmpty ? 'Brak ostatnich notatek' : recentNotes.map((n) => 
-  "- ${n['date']}: ${n['client']} - ${n['content']}"
-).join('\n')}
+      Ostatnie notatki:
+      ${recentNotes.isEmpty ? 'Brak ostatnich notatek' : recentNotes.map((n) => 
+        "- ${n['date']}: ${n['client']} - ${n['content']}"
+      ).join('\n')}
 
-Dostępni klienci:
-${(context['clients'] as List).map((c) => 
-  "- ${c['name']}${c['company'] != null ? ' (${c['company']})' : ''}"
-).join('\n')}
+      Dostępni klienci:
+      ${(context['clients'] as List).map((c) => 
+        "- ${c['name']}${c['company'] != null ? ' (${c['company']})' : ''}"
+      ).join('\n')}
 
-Polecenie użytkownika:
-$command
+      Polecenie użytkownika:
+      $command
 
-Proszę przetworzyć to polecenie i zwrócić odpowiedź w formacie JSON z odpowiednią akcją i parametrami.
-''';
+      Proszę przetworzyć to polecenie i zwrócić odpowiedź w formacie JSON z odpowiednią akcją i parametrami.
+      ''';
   }
 
   Future<Map<String, dynamic>> _buildContext(int userId) async {
