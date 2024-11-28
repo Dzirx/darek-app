@@ -3,6 +3,11 @@ import 'package:table_calendar/table_calendar.dart';
 import 'package:intl/intl.dart';
 import '../database/database_helper.dart';
 import '../database/models/meeting.dart';
+import '../widgets/calendar_filters.dart';
+import '../widgets/meeting_card.dart';
+import '../widgets/dialogs/meeting_add_dialog.dart';
+import '../widgets/dialogs/meeting_edit_dialog.dart';
+import '../widgets/dialogs/meeting_delete_dialog.dart';
 
 class CalendarScreen extends StatefulWidget {
   final int userId;
@@ -17,20 +22,20 @@ class CalendarScreen extends StatefulWidget {
 }
 
 class _CalendarScreenState extends State<CalendarScreen> {
-  late CalendarFormat _calendarFormat;
   late DateTime _focusedDay;
   late DateTime _selectedDay;
   late Map<DateTime, List<Meeting>> _meetings;
+  String? _selectedFilter;
   final DatabaseHelper _dbHelper = DatabaseHelper.instance;
 
   @override
   void initState() {
     super.initState();
-    _calendarFormat = CalendarFormat.month;
     _focusedDay = DateTime.now();
     _selectedDay = DateTime.now();
     _meetings = {};
     _loadMeetings();
+    _selectedFilter = null;
   }
 
   Future<void> _loadMeetings() async {
@@ -65,6 +70,36 @@ class _CalendarScreenState extends State<CalendarScreen> {
     return _meetings[normalizedDay] ?? [];
   }
 
+  Future<List<Meeting>> _getFilteredMeetings(DateTime day) async {
+    final meetings = await _dbHelper.getMeetingsForDay(day, widget.userId);
+    
+    if (_selectedFilter == null) return meetings;
+
+    switch (_selectedFilter) {
+      case 'today':
+        return meetings.where((m) => 
+          m.dateTime.year == DateTime.now().year &&
+          m.dateTime.month == DateTime.now().month &&
+          m.dateTime.day == DateTime.now().day
+        ).toList();
+      case 'week':
+        final weekStart = DateTime.now().subtract(
+          Duration(days: DateTime.now().weekday - 1)
+        );
+        final weekEnd = weekStart.add(const Duration(days: 7));
+        return meetings.where((m) => 
+          m.dateTime.isAfter(weekStart) && 
+          m.dateTime.isBefore(weekEnd)
+        ).toList();
+      case 'upcoming':
+        return meetings.where((m) => 
+          m.dateTime.isAfter(DateTime.now())
+        ).toList();
+      default:
+        return meetings;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -73,27 +108,40 @@ class _CalendarScreenState extends State<CalendarScreen> {
         actions: [
           IconButton(
             icon: const Icon(Icons.add),
-            onPressed: () => _showAddMeetingDialog(context),
+            onPressed: () async {
+              final result = await MeetingAddDialog.show(
+                context, 
+                _selectedDay,
+                widget.userId,
+                _dbHelper
+              );
+              if (result == true) {
+                setState(() => _loadMeetings());
+              }
+            },
           ),
         ],
       ),
       body: Column(
         children: [
+          CalendarFilters(
+            selectedFilter: _selectedFilter,
+            onFilterChanged: (filter) {
+              setState(() {
+                _selectedFilter = filter;
+                _loadMeetings();
+              });
+            },
+          ),
           TableCalendar(
             firstDay: DateTime.utc(2024, 1, 1),
             lastDay: DateTime.utc(2030, 12, 31),
             focusedDay: _focusedDay,
-            calendarFormat: _calendarFormat,
             selectedDayPredicate: (day) => isSameDay(_selectedDay, day),
             onDaySelected: (selectedDay, focusedDay) {
               setState(() {
                 _selectedDay = selectedDay;
                 _focusedDay = focusedDay;
-              });
-            },
-            onFormatChanged: (format) {
-              setState(() {
-                _calendarFormat = format;
               });
             },
             onPageChanged: (focusedDay) {
@@ -107,16 +155,14 @@ class _CalendarScreenState extends State<CalendarScreen> {
           const SizedBox(height: 8),
           Expanded(
             child: FutureBuilder<List<Meeting>>(
-              future: _dbHelper.getMeetingsForDay(_selectedDay, widget.userId),
+              future: _getFilteredMeetings(_selectedDay),
               builder: (context, snapshot) {
                 if (snapshot.connectionState == ConnectionState.waiting) {
                   return const Center(child: CircularProgressIndicator());
                 }
                 
                 if (snapshot.hasError) {
-                  return Center(
-                    child: Text('Błąd: ${snapshot.error}'),
-                  );
+                  return Center(child: Text('Błąd: ${snapshot.error}'));
                 }
                 
                 final meetings = snapshot.data ?? [];
@@ -131,19 +177,29 @@ class _CalendarScreenState extends State<CalendarScreen> {
                   itemCount: meetings.length,
                   itemBuilder: (context, index) {
                     final meeting = meetings[index];
-                    return Card(
-                      margin: const EdgeInsets.symmetric(
-                        horizontal: 16,
-                        vertical: 4,
-                      ),
-                      child: ListTile(
-                        title: Text(meeting.title),
-                        subtitle: Text(meeting.description),
-                        trailing: Text(
-                          DateFormat('HH:mm').format(meeting.dateTime),
-                        ),
-                        onTap: () => _showMeetingDetails(context, meeting),
-                      ),
+                    return MeetingCard(
+                      meeting: meeting,
+                      onEdit: () async {
+                        final result = await MeetingEditDialog.show(
+                          context,
+                          meeting,
+                          widget.userId,
+                          _dbHelper
+                        );
+                        if (result == true) {
+                          setState(() => _loadMeetings());
+                        }
+                      },
+                      onDelete: () async {
+                        final result = await MeetingDeleteDialog.show(
+                          context,
+                          meeting,
+                          _dbHelper
+                        );
+                        if (result == true) {
+                          setState(() => _loadMeetings());
+                        }
+                      },
                     );
                   },
                 );
@@ -152,80 +208,6 @@ class _CalendarScreenState extends State<CalendarScreen> {
           ),
         ],
       ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: () {
-          // TODO: Implement voice command handling
-        },
-        child: const Icon(Icons.mic),
-      ),
     );
   }
-
-  Future<void> _showAddMeetingDialog(BuildContext context) async {
-    // TODO: Implement add meeting dialog
-  }
-
-  void _showMeetingDetails(BuildContext context, Meeting meeting) {
-  showDialog(
-    context: context,
-    builder: (context) => AlertDialog(
-      title: const Text('Szczegóły spotkania'),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text('Tytuł: ${meeting.title}'),
-          const SizedBox(height: 8),
-          Text('Data: ${DateFormat('dd.MM.yyyy HH:mm').format(meeting.dateTime)}'),
-          const SizedBox(height: 8),
-          if (meeting.description.isNotEmpty)
-            Text('Opis: ${meeting.description}'),
-        ],
-      ),
-      actions: [
-        // Przycisk usuwania
-        TextButton(
-          onPressed: () async {
-            // Potwierdzenie usunięcia
-            final confirmed = await showDialog<bool>(
-              context: context,
-              builder: (context) => AlertDialog(
-                title: const Text('Potwierdź usunięcie'),
-                content: const Text('Czy na pewno chcesz usunąć to spotkanie?'),
-                actions: [
-                  TextButton(
-                    child: const Text('Anuluj'),
-                    onPressed: () => Navigator.of(context).pop(false),
-                  ),
-                  TextButton(
-                    child: const Text('Usuń'),
-                    onPressed: () => Navigator.of(context).pop(true),
-                  ),
-                ],
-              ),
-            );
-
-            if (confirmed == true) {
-              await DatabaseHelper.instance.deleteMeeting(meeting.id!);
-              if (!context.mounted) return;
-              Navigator.of(context).pop(); // Zamknij szczegóły
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Spotkanie zostało usunięte')),
-              );
-              setState(() {
-                _loadMeetings(); // Odśwież listę spotkań
-              });
-            }
-          },
-          style: TextButton.styleFrom(foregroundColor: Colors.red),
-          child: const Text('Usuń'),
-        ),
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: const Text('Zamknij'),
-        ),
-      ],
-    ),
-  );
-}
 }

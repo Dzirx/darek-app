@@ -49,6 +49,7 @@ class DatabaseHelper {
         description TEXT,
         dateTime TEXT NOT NULL,
         hasReminder INTEGER NOT NULL,
+        reminderTimes TEXT,
         userId INTEGER NOT NULL,
         FOREIGN KEY (userId) REFERENCES users (id)
       )

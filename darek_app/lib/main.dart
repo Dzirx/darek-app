@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 import 'package:intl/date_symbol_data_local.dart'; // Dodany import
 import 'screens/login_screen.dart';
 
+
 void main() async {
   WidgetsFlutterBinding.ensureInitialized(); // Ważne dla inicjalizacji bazy danych
   
