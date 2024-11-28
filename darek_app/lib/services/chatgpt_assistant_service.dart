@@ -6,6 +6,7 @@ import '../database/models/meeting.dart';
 import '../database/models/client_note.dart';
 import '../database/models/client.dart';
 import 'package:flutter_tts/flutter_tts.dart';
+import 'interactive_note_processor.dart';
 
 class GPTAssistantService {
   static final GPTAssistantService instance = GPTAssistantService._init();
@@ -13,8 +14,10 @@ class GPTAssistantService {
   final FlutterTts _tts = FlutterTts();
   final String _apiKey = 'sk-w5-PlSSZJvpa6jRYChA1-8Q2pOPDa2R46IL17pMCWwT3BlbkFJMIgIBPbjSkc-dgHJC_eyHFqRHGehI6Wm7hHHOGrx0A';
   final String _baseUrl = 'https://api.openai.com/v1/chat/completions';
+  final InteractiveNoteProcessor _noteProcessor;
+  bool _isProcessingNote = false;
 
-  GPTAssistantService._init() {
+  GPTAssistantService._init() : _noteProcessor = InteractiveNoteProcessor(DatabaseHelper.instance) {
     _initTts();
   }
 
@@ -46,8 +49,19 @@ class GPTAssistantService {
     }
   }
 
-  Future<String> processCommand(String command, int userId) async {
+  Future<Map<String, dynamic>> processCommand(String command, int userId) async {
     try {
+      // Sprawdź czy to komenda notatki
+      if (_isProcessingNote || command.toLowerCase().contains('dodaj notatkę')) {
+        final result = await _noteProcessor.processCommand(command, userId);
+        await _speak(result['message'] as String);
+        _isProcessingNote = result['awaitingResponse'] as bool;
+        return {
+          'message': result['message'],
+          'isNoteMode': _isProcessingNote,
+          'success': true
+        };
+      }
       final context = await _buildContext(userId);
       final prompt = _buildPrompt(command, context);
 
@@ -70,6 +84,14 @@ class GPTAssistantService {
                   1. Zawsze odpowiadaj w formacie JSON
                   2. Bądź krótki i zwięzły
                   3. Nie dodawaj zbędnych informacji
+
+                  Obsługiwane akcje:
+                  1. Sprawdzanie spotkań
+                  2. Dodawanie spotkań
+                  3. Usuwanie spotkań
+                  4. Analizowanie sprzedaży
+                  5. Dodawanie notatek
+                  6. Sprawdzanie notatek
 
                   USUWANIE SPOTKAŃ:
                   - Zawsze wymagaj dokładnej godziny
@@ -104,11 +126,42 @@ class GPTAssistantService {
                     "response": "Dodano spotkanie"
                   }
 
-                  PRZYKŁADY:
+                  DODAWANIE NOTATEK:
+                  {
+                    "action": "add_note",
+                    "parameters": {
+                      "client": "Nazwa",
+                      "content": "treść notatki",
+                      "type": "general|order|price|meeting|contact|feedback|preorder|complaint",
+                      "importance": "normal|high|urgent|low"
+                    },
+                    "response": "Rozpoczynam dodawanie notatki dla klienta X"
+                  }
+
+                  SPRAWDZANIE NOTATEK:
+                  {
+                    "action": "check_notes",
+                    "parameters": {
+                      "client": "Nazwa",
+                      "type": "general|order|price|meeting|contact|feedback|preorder|complaint",
+                      "dateFrom": "YYYY-MM-DD",
+                      "dateTo": "YYYY-MM-DD"
+                    },
+                    "response": "Sprawdzam notatki"
+                  }
+
+                  PRZYKŁADY KOMEND:
+                  SPOTKANIA:
                   - "usuń spotkanie na jutro na 15:30"
                   - "usuń spotkanie z Kowalskim na dziś na 22:00"
                   - "jakie mam spotkania jutro"
                   - "umów spotkanie z Kowalskim na jutro na 14:00"
+
+                  NOTATKI:
+                  - "dodaj notatkę dla klienta Kowalski"
+                  - "sprawdź notatki dla klienta ABC"
+                  - "pokaż reklamacje klienta XYZ"
+                  - "dodaj pilną notatkę dla firmy ABC"
                   '''
             },
             {
@@ -121,13 +174,12 @@ class GPTAssistantService {
         }),
       );
 
-      if (response.statusCode == 200) {
+       if (response.statusCode == 200) {
         final jsonResponse = jsonDecode(response.body);
         final assistantResponse = jsonDecode(
           jsonResponse['choices'][0]['message']['content']
         );
         
-        // Modyfikujemy odpowiedź dla check_meetings
         if (assistantResponse['action'] == 'check_meetings') {
           final meetings = await _checkMeetings(assistantResponse['parameters'], userId);
           if (meetings != null) {
@@ -138,15 +190,24 @@ class GPTAssistantService {
         await _executeAction(assistantResponse, userId);
         await _speak(assistantResponse['response']);
         
-        return assistantResponse['response'];
+        return {
+          'message': assistantResponse['response'],
+          'isNoteMode': false,
+          'success': true
+        };
       } else {
         throw Exception('Błąd komunikacji z asystentem');
       }
     } catch (e) {
       print('Error in processCommand: $e');
-      return 'Przepraszam, wystąpił błąd: $e';
+      return {
+        'message': 'Przepraszam, wystąpił błąd: $e',
+        'isNoteMode': false,
+        'success': false
+      };
     }
   }
+
 
   Future<String?> _checkMeetings(Map<String, dynamic> params, int userId) async {
     try {
@@ -175,31 +236,51 @@ class GPTAssistantService {
     }
   }
 
-  Future<void> _executeAction(Map<String, dynamic> action, int userId) async {
-    try {
-      final params = action['parameters'];
-      
-      switch (action['action']) {
-        case 'add_meeting':
-          await _addMeeting(params, userId);
-          break;
-        case 'delete_meeting':
-          await _deleteMeeting(params, userId);
-          break;
-        case 'add_note':
-          await _addNote(params, userId);
-          break;
-        case 'check_notes':
-          await _checkNotes(params, userId);
-          break;
-        case 'analyze_sales':
-          await _analyzeSales(params, userId);
-          break;
-      }
-    } catch (e) {
-      print('Error executing action: $e');
+Future<void> _executeAction(Map<String, dynamic> action, int userId) async {
+  try {
+    final params = action['parameters'];
+    
+    switch (action['action']) {
+      case 'check_meetings':
+        final meetings = await _checkMeetings(params, userId);
+        if (meetings != null) {
+          action['response'] = meetings;
+        }
+        break;
+        
+      case 'add_meeting':
+        await _addMeeting(params, userId);
+        break;
+        
+      case 'delete_meeting':
+        await _deleteMeeting(params, userId);
+        break;
+
+      case 'add_note':
+        final result = await _noteProcessor.processCommand(
+          params['client'], 
+          userId,
+        );
+        if (result['success']) {
+          _isProcessingNote = result['awaitingResponse'];
+          action['response'] = result['message'];
+        } else {
+          throw Exception(result['message']);
+        }
+        break;
+
+      case 'check_notes':
+        final notes = await _checkNotes(params, userId);
+        if (notes != null) {
+          action['response'] = notes;
+        }
+        break;
     }
+  } catch (e) {
+    print('Error executing action: $e');
+    await _speak('Wystąpił błąd podczas wykonywania polecenia');
   }
+}
 
   Future<void> _addMeeting(Map<String, dynamic> params, int userId) async {
     final dateTime = DateTime.parse('${params['date']} ${params['time']}');
@@ -284,32 +365,29 @@ class GPTAssistantService {
   }
 }
 
-  Future<void> _checkNotes(Map<String, dynamic> params, int userId) async {
-    final clientName = params['client'];
-    final clients = await _dbHelper.searchClients(clientName, userId);
-    
+Future<String?> _checkNotes(Map<String, dynamic> params, int userId) async {
+  try {
+    final clients = await _dbHelper.searchClients(params['client'], userId);
     if (clients.isEmpty) {
-      await _speak('Nie znaleziono klienta $clientName');
-      return;
+      return 'Nie znaleziono klienta ${params['client']}';
     }
 
     final notes = await _dbHelper.getNotesForClient(clients.first.id!);
     if (notes.isEmpty) {
-      await _speak('Nie ma żadnych notatek dla klienta $clientName');
-      return;
+      return 'Brak notatek dla klienta ${clients.first.name}';
     }
 
-    String response = 'Ostatnie notatki dla klienta $clientName:\n';
-    for (var note in notes.take(3)) {
+    String response = 'Notatki dla klienta ${clients.first.name}:\n';
+    for (var note in notes) {
       response += '- ${note.content}\n';
     }
-    
-    if (notes.length > 3) {
-      response += 'oraz ${notes.length - 3} więcej notatek.';
-    }
-    
-    await _speak(response);
+    return response;
+
+  } catch (e) {
+    print('Error checking notes: $e');
+    return null;
   }
+}
 
   Future<void> _analyzeSales(Map<String, dynamic> params, int userId) async {
     final period = params['period'] ?? 'month';

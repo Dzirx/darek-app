@@ -1,15 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:speech_to_text/speech_to_text.dart';
 import '../services/chatgpt_assistant_service.dart';
-import 'package:speech_to_text/speech_recognition_result.dart'; // Dodany brakujący import
-
+import 'package:speech_to_text/speech_recognition_result.dart';
 
 class SpeechRecognitionWidget extends StatefulWidget {
-  final int userId;
+  final int userId;  // Upewnij się, że to jest int
 
   const SpeechRecognitionWidget({
     Key? key,
-    required this.userId,
+    required this.userId,  // Ten parametr musi być przekazany jako int
   }) : super(key: key);
 
   @override
@@ -22,6 +21,7 @@ class _SpeechRecognitionWidgetState extends State<SpeechRecognitionWidget> {
   bool _isListening = false;
   String _lastWords = '';
   bool _isProcessing = false;
+  bool _isInNoteMode = false;
 
   @override
   void initState() {
@@ -34,8 +34,12 @@ class _SpeechRecognitionWidgetState extends State<SpeechRecognitionWidget> {
       _isListening = await _speech.initialize(
         onError: (error) => print('Error: ${error.errorMsg}'),
         onStatus: (status) {
-          if (status == 'done') {
-            setState(() => _isListening = false);
+          if (status == 'done' && _isInNoteMode) {
+            Future.delayed(const Duration(milliseconds: 1000), () {
+              if (_isInNoteMode && !_isListening && mounted) {
+                _startListening();
+              }
+            });
           }
         },
       );
@@ -50,7 +54,7 @@ class _SpeechRecognitionWidgetState extends State<SpeechRecognitionWidget> {
       if (!_isListening) {
         if (await _speech.initialize()) {
           setState(() => _isListening = true);
-          _speech.listen(
+          await _speech.listen(
             onResult: _onSpeechResult,
             localeId: 'pl_PL',
             listenMode: ListenMode.confirmation,
@@ -65,7 +69,10 @@ class _SpeechRecognitionWidgetState extends State<SpeechRecognitionWidget> {
 
   void _stopListening() {
     _speech.stop();
-    setState(() => _isListening = false);
+    setState(() {
+      _isListening = false;
+      _isInNoteMode = false;
+    });
   }
 
   Future<void> _onSpeechResult(SpeechRecognitionResult result) async {
@@ -76,7 +83,23 @@ class _SpeechRecognitionWidgetState extends State<SpeechRecognitionWidget> {
     if (result.finalResult && !_isProcessing) {
       setState(() => _isProcessing = true);
       try {
-        await _assistant.processCommand(_lastWords, widget.userId);
+        // Używamy widget.userId, który jest na pewno typu int
+        final response = await _assistant.processCommand(_lastWords, widget.userId);
+        
+        // Bezpieczne sprawdzenie typu i konwersja
+        if (response is Map<String, dynamic>) {
+          setState(() {
+            _isInNoteMode = response['isNoteMode'] as bool? ?? false;
+          });
+
+          if (_isInNoteMode && mounted) {
+            Future.delayed(const Duration(milliseconds: 1000), () {
+              if (_isInNoteMode && !_isListening && mounted) {
+                _startListening();
+              }
+            });
+          }
+        }
       } catch (e) {
         print('Error processing command: $e');
       } finally {
@@ -102,12 +125,11 @@ class _SpeechRecognitionWidgetState extends State<SpeechRecognitionWidget> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                // Status i mikrofon
                 Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     Icon(
-                      _isProcessing ? Icons.sync : (_isListening ? Icons.record_voice_over : Icons.mic_none),
+                      _getStatusIcon(),
                       size: 32,
                       color: _getStatusColor(),
                     ),
@@ -121,9 +143,7 @@ class _SpeechRecognitionWidgetState extends State<SpeechRecognitionWidget> {
                     ),
                   ],
                 ),
-                
-                // Przykładowe komendy (pokazywane tylko gdy nie słucha)
-                if (!_isListening && !_isProcessing && _lastWords.isEmpty) ...[
+                if (!_isListening && !_isProcessing && _lastWords.isEmpty && !_isInNoteMode) ...[
                   const SizedBox(height: 16),
                   const Text(
                     'Przykładowe komendy:',
@@ -134,18 +154,15 @@ class _SpeechRecognitionWidgetState extends State<SpeechRecognitionWidget> {
                   ),
                   const SizedBox(height: 8),
                   const Text(
-                    '• "Jakie mam jutro spotkania?"\n'
-                    '• "Umów spotkanie z [klient] na jutro na 15:00"\n'
                     '• "Dodaj notatkę dla [klient]"\n'
-                    '• "Pokaż sprzedaż w tym miesiącu"',
+                    '• "Jakie mam jutro spotkania?"\n'
+                    '• "Umów spotkanie z [klient] na jutro na 15:00"',
                     style: TextStyle(fontSize: 14),
                   ),
                 ],
               ],
             ),
           ),
-          
-          // Przycisk mikrofonu na całej powierzchni
           Positioned.fill(
             child: Material(
               color: Colors.transparent,
@@ -160,14 +177,23 @@ class _SpeechRecognitionWidgetState extends State<SpeechRecognitionWidget> {
     );
   }
 
+  IconData _getStatusIcon() {
+    if (_isProcessing) return Icons.sync;
+    if (_isInNoteMode) return Icons.note_add;
+    if (_isListening) return Icons.record_voice_over;
+    return Icons.mic_none;
+  }
+
   Color _getStatusColor() {
     if (_isProcessing) return Colors.orange;
+    if (_isInNoteMode) return Colors.green;
     if (_isListening) return Colors.red;
     return Colors.blue;
   }
 
   String _getStatusText() {
     if (_isProcessing) return 'Przetwarzam...';
+    if (_isInNoteMode) return 'Tryb notatki - mów treść...';
     if (_isListening) return 'Słucham...';
     return 'Kliknij, aby wydać polecenie';
   }
