@@ -352,5 +352,56 @@ class DatabaseHelper {
     );
     return maps.map((map) => ClientNote.fromMap(map)).toList();
   }
+
+  Future<void> updateNote(ClientNote note) async {
+  final db = await database;
+  await db.update(
+    'client_notes',
+    note.toMap(),
+    where: 'id = ?',
+    whereArgs: [note.id],
+  );
+}
+
+Future<void> deleteNote(int noteId) async {
+  final db = await database;
+  await db.delete(
+    'client_notes',
+    where: 'id = ?',
+    whereArgs: [noteId],
+  );
+}
+Future<int> updateSale(Sale sale) async {
+  final db = await database;
+  return db.update(
+    'sales',
+    sale.toMap(),
+    where: 'id = ?',
+    whereArgs: [sale.id],
+  );
+}
+
+Future<int> deleteSale(int id) async {
+  final db = await database;
+  return db.delete(
+    'sales',
+    where: 'id = ?',
+    whereArgs: [id],
+  );
+}
+
+Future<Client?> getClientByName(String name) async {
+  final db = await database;
+  final List<Map<String, dynamic>> maps = await db.query(
+    'clients',
+    where: 'name = ?',
+    whereArgs: [name],
+    limit: 1,
+  );
+  if (maps.isNotEmpty) {
+    return Client.fromMap(maps.first);
+  }
+  return null;
+}
 }
 
