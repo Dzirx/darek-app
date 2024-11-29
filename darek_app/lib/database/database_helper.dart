@@ -27,6 +27,9 @@ class DatabaseHelper {
       path,
       version: 1,
       onCreate: _createDB,
+      onConfigure: (db) async {
+      await db.execute('PRAGMA encoding = "UTF-8"');
+    },
     );
   }
 

@@ -1,14 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:speech_to_text/speech_to_text.dart';
-import '../services/chatgpt_assistant_service.dart';
 import 'package:speech_to_text/speech_recognition_result.dart';
+import '../services/chatgpt_assistant_service.dart';
+import '../services/process/tts_process.dart';
 
 class SpeechRecognitionWidget extends StatefulWidget {
-  final int userId;  // Upewnij się, że to jest int
+  final int userId;
 
   const SpeechRecognitionWidget({
     Key? key,
-    required this.userId,  // Ten parametr musi być przekazany jako int
+    required this.userId,
   }) : super(key: key);
 
   @override
@@ -18,6 +19,7 @@ class SpeechRecognitionWidget extends StatefulWidget {
 class _SpeechRecognitionWidgetState extends State<SpeechRecognitionWidget> {
   final SpeechToText _speech = SpeechToText();
   final GPTAssistantService _assistant = GPTAssistantService.instance;
+  final TTSProcess _ttsProcess = TTSProcess();
   bool _isListening = false;
   String _lastWords = '';
   bool _isProcessing = false;
@@ -34,12 +36,8 @@ class _SpeechRecognitionWidgetState extends State<SpeechRecognitionWidget> {
       _isListening = await _speech.initialize(
         onError: (error) => print('Error: ${error.errorMsg}'),
         onStatus: (status) {
-          if (status == 'done' && _isInNoteMode) {
-            Future.delayed(const Duration(milliseconds: 1000), () {
-              if (_isInNoteMode && !_isListening && mounted) {
-                _startListening();
-              }
-            });
+          if (status == 'done') {
+            setState(() => _isListening = false);
           }
         },
       );
@@ -54,7 +52,7 @@ class _SpeechRecognitionWidgetState extends State<SpeechRecognitionWidget> {
       if (!_isListening) {
         if (await _speech.initialize()) {
           setState(() => _isListening = true);
-          await _speech.listen(
+          _speech.listen(
             onResult: _onSpeechResult,
             localeId: 'pl_PL',
             listenMode: ListenMode.confirmation,
@@ -69,10 +67,7 @@ class _SpeechRecognitionWidgetState extends State<SpeechRecognitionWidget> {
 
   void _stopListening() {
     _speech.stop();
-    setState(() {
-      _isListening = false;
-      _isInNoteMode = false;
-    });
+    setState(() => _isListening = false);
   }
 
   Future<void> _onSpeechResult(SpeechRecognitionResult result) async {
@@ -83,25 +78,19 @@ class _SpeechRecognitionWidgetState extends State<SpeechRecognitionWidget> {
     if (result.finalResult && !_isProcessing) {
       setState(() => _isProcessing = true);
       try {
-        // Używamy widget.userId, który jest na pewno typu int
         final response = await _assistant.processCommand(_lastWords, widget.userId);
         
-        // Bezpieczne sprawdzenie typu i konwersja
-        if (response is Map<String, dynamic>) {
+        if (response['success']) {
+          await _ttsProcess.speak(response['message']);
           setState(() {
-            _isInNoteMode = response['isNoteMode'] as bool? ?? false;
+            _isInNoteMode = response['isNoteMode'] ?? false;
           });
-
-          if (_isInNoteMode && mounted) {
-            Future.delayed(const Duration(milliseconds: 1000), () {
-              if (_isInNoteMode && !_isListening && mounted) {
-                _startListening();
-              }
-            });
-          }
+        } else {
+          await _ttsProcess.speak('Przepraszam, wystąpił błąd podczas przetwarzania polecenia');
         }
       } catch (e) {
         print('Error processing command: $e');
+        await _ttsProcess.speak('Wystąpił nieoczekiwany błąd');
       } finally {
         if (mounted) {
           setState(() {
@@ -154,10 +143,21 @@ class _SpeechRecognitionWidgetState extends State<SpeechRecognitionWidget> {
                   ),
                   const SizedBox(height: 8),
                   const Text(
-                    '• "Dodaj notatkę dla [klient]"\n'
+                    '• "Dodaj notatkę [klient]"\n'
                     '• "Jakie mam jutro spotkania?"\n'
-                    '• "Umów spotkanie z [klient] na jutro na 15:00"',
+                    '• "Umów spotkanie z [klient] na jutro na 15:00"\n'
+                    '• "Pokaż sprzedaż w tym miesiącu"',
                     style: TextStyle(fontSize: 14),
+                  ),
+                ],
+                if (_lastWords.isNotEmpty) ...[
+                  const SizedBox(height: 16),
+                  Text(
+                    _lastWords,
+                    style: const TextStyle(
+                      fontSize: 14,
+                      fontStyle: FontStyle.italic,
+                    ),
                   ),
                 ],
               ],
@@ -201,6 +201,7 @@ class _SpeechRecognitionWidgetState extends State<SpeechRecognitionWidget> {
   @override
   void dispose() {
     _speech.stop();
+    _ttsProcess.dispose();
     super.dispose();
   }
 }

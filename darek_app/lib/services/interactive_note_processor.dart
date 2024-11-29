@@ -11,16 +11,23 @@ class InteractiveNoteProcessor {
 
   Future<Map<String, dynamic>> processCommand(String command, int userId) async {
     try {
-      // Jeśli czekamy na treść notatki
       if (_isWaitingForContent && _selectedClient != null) {
         return await _createNote(command, userId);
       }
 
-      // Wyszukiwanie klienta
-      if (command.toLowerCase().contains('dodaj notatkę dla')) {
-        final clientName = _extractClientName(command);
-        final clients = await _dbHelper.searchClients(clientName, userId);
+      // Rozpoznawanie różnych wariantów komend
+      final normalizedCommand = command.toLowerCase();
+      if (_isNoteCommand(normalizedCommand)) {
+        final clientName = _extractClientName(normalizedCommand);
+        if (clientName.isEmpty) {
+          return {
+            'success': false,
+            'message': 'Nie rozpoznano nazwy klienta. Powiedz "dodaj notatkę dla [nazwa klienta]"',
+            'awaitingResponse': false
+          };
+        }
 
+        final clients = await _searchClients(clientName, userId);
         if (clients.isEmpty) {
           return {
             'success': false,
@@ -54,6 +61,45 @@ class InteractiveNoteProcessor {
     }
   }
 
+  bool _isNoteCommand(String command) {
+    final patterns = [
+      'dodaj notatkę dla',
+      'zapisz notatkę dla',
+      'nowa notatka dla',
+      'stwórz notatkę dla',
+      'zrób notatkę dla'
+    ];
+    return patterns.any((pattern) => command.contains(pattern));
+  }
+
+  String _extractClientName(String command) {
+    for (var pattern in [
+      RegExp(r'dla\s+(.+)$'),
+      RegExp(r'dla\s+firmy\s+(.+)$'),
+      RegExp(r'dla\s+klienta\s+(.+)$')
+    ]) {
+      final match = pattern.firstMatch(command);
+      if (match != null) {
+        return match.group(1)?.trim() ?? '';
+      }
+    }
+    return '';
+  }
+
+  Future<List<Client>> _searchClients(String query, int userId) async {
+    // Usuń zbędne słowa i znaki
+    query = query.replaceAll(RegExp(r'(firmy|klienta)\s+'), '').trim();
+    
+    final clients = await _dbHelper.searchClients(query, userId);
+    if (clients.isEmpty) {
+      // Spróbuj wyszukać częściowo
+      return await _dbHelper.searchClients(
+        query.split(' ').first, 
+        userId
+      );
+    }
+    return clients;
+  }
   Future<Map<String, dynamic>> _createNote(String content, int userId) async {
     try {
       if (_selectedClient == null) {
@@ -96,11 +142,6 @@ class InteractiveNoteProcessor {
   void _resetState() {
     _selectedClient = null;
     _isWaitingForContent = false;
-  }
-
-  String _extractClientName(String command) {
-    final match = RegExp(r'dla\s+(.+)$').firstMatch(command);
-    return match?.group(1)?.trim() ?? '';
   }
 
   NoteType _determineNoteType(String content) {
