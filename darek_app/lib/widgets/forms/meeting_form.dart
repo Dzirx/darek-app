@@ -31,7 +31,7 @@ class _MeetingFormState extends State<MeetingForm> {
   late DateTime selectedDateTime;
   late TimeOfDay selectedTime;
   late bool hasReminder;
-  List<Duration> selectedReminders = [const Duration(minutes: 30)];
+  late List<Duration> selectedReminders;
 
   final List<ReminderOption> reminderOptions = const [
     ReminderOption('W czasie wydarzenia', Duration.zero),
@@ -55,6 +55,7 @@ class _MeetingFormState extends State<MeetingForm> {
     selectedDateTime = meeting?.dateTime ?? widget.initialDate;
     selectedTime = TimeOfDay.fromDateTime(meeting?.dateTime ?? widget.initialDate);
     hasReminder = meeting?.hasReminder ?? true;
+    selectedReminders = meeting?.reminderTimes ?? [const Duration(minutes: 30)];
   }
 
   @override
@@ -62,6 +63,17 @@ class _MeetingFormState extends State<MeetingForm> {
     titleController.dispose();
     descriptionController.dispose();
     super.dispose();
+  }
+
+  String _getDurationLabel(Duration duration) {
+    final option = reminderOptions.firstWhere(
+      (opt) => opt.duration == duration,
+      orElse: () => ReminderOption(
+        '${duration.inMinutes} minut przed',
+        duration,
+      ),
+    );
+    return option.label;
   }
 
   @override
@@ -81,7 +93,10 @@ class _MeetingFormState extends State<MeetingForm> {
         SwitchListTile(
           title: const Text('Przypomnienie'),
           value: hasReminder,
-          onChanged: (value) => setState(() => hasReminder = value),
+          onChanged: (value) => setState(() {
+            hasReminder = value;
+            if (!value) selectedReminders.clear();
+          }),
         ),
         if (hasReminder) _buildReminderSelector(),
         const SizedBox(height: 16),
@@ -127,12 +142,8 @@ class _MeetingFormState extends State<MeetingForm> {
             spacing: 8,
             runSpacing: 8,
             children: selectedReminders.map((duration) {
-              final option = reminderOptions.firstWhere(
-                (opt) => opt.duration == duration,
-                orElse: () => ReminderOption('Niestandardowe', duration),
-              );
               return Chip(
-                label: Text(option.label),
+                label: Text(_getDurationLabel(duration)),
                 onDeleted: () {
                   setState(() {
                     selectedReminders.remove(duration);
