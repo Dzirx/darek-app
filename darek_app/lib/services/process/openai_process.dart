@@ -1,14 +1,12 @@
 import 'package:http/http.dart' as http;
 import 'dart:convert';
+import 'package:intl/intl.dart';
 
 class OpenAIProcess {
   final String _apiKey = 'sk-w5-PlSSZJvpa6jRYChA1-8Q2pOPDa2R46IL17pMCWwT3BlbkFJMIgIBPbjSkc-dgHJC_eyHFqRHGehI6Wm7hHHOGrx0A';
   final String _baseUrl = 'https://api.openai.com/v1/chat/completions';
 
-  Future<Map<String, dynamic>> getResponse(
-    String command, 
-    Map<String, dynamic> context
-  ) async {
+  Future<Map<String, dynamic>> getResponse(String command, Map<String, dynamic> context) async {
     try {
       final response = await http.post(
         Uri.parse(_baseUrl),
@@ -33,17 +31,40 @@ class OpenAIProcess {
         }),
       );
 
-      if (response.statusCode == 200) {
-        final jsonResponse = jsonDecode(response.body);
-        return jsonDecode(jsonResponse['choices'][0]['message']['content']);
-      } else {
-        throw Exception('OpenAI API error: ${response.statusCode}');
+    if (response.statusCode == 200) {
+      final jsonResponse = jsonDecode(response.body);
+      var assistantResponse = jsonDecode(jsonResponse['choices'][0]['message']['content']);
+      
+      if (assistantResponse['action'] == 'add_meeting') {
+        // Przetwarzanie relatywnych dat
+        assistantResponse = await _processMeetingDates(assistantResponse);
+        print('Processed response: $assistantResponse'); // Dodane logowanie
       }
-    } catch (e) {
-      print('Error in OpenAI process: $e');
-      rethrow;
+      
+      return assistantResponse;
     }
+    throw Exception('API Error: ${response.statusCode}');
+  } catch (e) {
+    print('Error in getResponse: $e');
+    rethrow;
   }
+}
+
+  Future<Map<String, dynamic>> _processMeetingDates(Map<String, dynamic> response) async {
+  final params = response['parameters'];
+  final now = DateTime.now();
+  
+  // Konwersja relatywnych dat
+  if (params['date'] == 'tomorrow' || params['date'].contains('jutro')) {
+    final tomorrow = now.add(const Duration(days: 1));
+    params['date'] = DateFormat('yyyy-MM-dd').format(tomorrow);
+  }
+  
+  // Zapewnienie domyślnych wartości
+  params['time'] ??= '12:00';
+  
+  return response;
+}
 
   String _getSystemPrompt() {
     return '''
@@ -120,12 +141,24 @@ class OpenAIProcess {
       "response": "Sprawdzam notatki"
     }
 
+    ANALIZA SPRZEDAŻY:
+      {
+        "action": "analyze_sales",
+        "parameters": {
+          "period": "3months"
+        },
+        "response": "Wynik analizy sprzedaży"
+      }
+
     PRZYKŁADY KOMEND:
     SPOTKANIA:
     - "usuń spotkanie na jutro na 15:30"
     - "usuń spotkanie z Kowalskim na dziś na 22:00"
     - "jakie mam spotkania jutro"
     - "umów spotkanie z Kowalskim na jutro na 14:00"
+    - "przeanalizuj sprzedaż z ostatnich 3 miesięcy"
+    - "kogo powinienem odwiedzić"
+    - "pokaż najlepszych klientów"
 
     NOTATKI:
     - "dodaj notatkę dla klienta Kowalski"
@@ -147,6 +180,16 @@ class OpenAIProcess {
     final clientsText = (context['clients'] as List)
         .map((c) => "- ${c['full_name']}")
         .join('\n');
+
+    final salesText = context['sales'] != null ? '''
+        Dane sprzedażowe z ostatnich 3 miesięcy:
+        Całkowita sprzedaż: ${context['total_sales']} zł
+        Top sprzedaż:
+        ${(context['sales'] as List)
+            .take(5)
+            .map((s) => "- ${s['clientName']}: ${s['amount']} zł")
+            .join('\n')}
+        ''': 'Brak danych sprzedażowych';
 
     return '''
       Aktualny kontekst:

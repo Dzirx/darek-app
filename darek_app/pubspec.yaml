@@ -45,6 +45,8 @@ dependencies:
   crypto: ^3.0.3
   flutter_tts: ^3.8.5
   http: ^1.1.0
+  flutter_localizations:
+    sdk: flutter
 
 
 

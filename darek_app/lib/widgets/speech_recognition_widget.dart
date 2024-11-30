@@ -143,7 +143,7 @@ class _SpeechRecognitionWidgetState extends State<SpeechRecognitionWidget> {
                   ),
                   const SizedBox(height: 8),
                   const Text(
-                    '• "Dodaj notatkę [klient]"\n'
+                    '• "Dodaj notatkę dla [klient]"\n'
                     '• "Jakie mam jutro spotkania?"\n'
                     '• "Umów spotkanie z [klient] na jutro na 15:00"\n'
                     '• "Pokaż sprzedaż w tym miesiącu"',

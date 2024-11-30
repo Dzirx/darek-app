@@ -5,20 +5,51 @@ import '../../database/models/meeting.dart';
 class MeetingProcess {
   final DatabaseHelper _dbHelper = DatabaseHelper.instance;
 
-  Future<void> add(Map<String, dynamic> params, int userId) async {
-    final dateTime = DateTime.parse('${params['date']} ${params['time']}');
+Future<void> add(Map<String, dynamic> params, int userId) async {
+  try {
+    print('Adding meeting with params: $params'); // Dodane logowanie
+    
+    // Walidacja parametrów
+    if (params['date'] == null) {
+      throw ArgumentError('Date is required');
+    }
+    
+    DateTime dateTime;
+    try {
+      // Bezpieczne parsowanie daty
+      final date = params['date'].toString();
+      final time = params['time']?.toString() ?? '12:00';
+      dateTime = DateTime.parse('$date $time');
+    } catch (e) {
+      print('Error parsing date: $e');
+      // Użyj jutra jako daty domyślnej
+      final tomorrow = DateTime.now().add(const Duration(days: 1));
+      dateTime = DateTime(tomorrow.year, tomorrow.month, tomorrow.day, 12, 0);
+    }
+    
+    String title;
+    if (params['client'] != null && params['client'].toString().isNotEmpty) {
+      title = 'Spotkanie z ${params['client']}';
+    } else {
+      title = 'Spotkanie';
+    }
     
     final meeting = Meeting(
-      title: 'Spotkanie z ${params['client']}',
-      description: params['description'] ?? '',
+      title: title,
+      description: params['description']?.toString() ?? '',
       dateTime: dateTime,
       userId: userId,
       hasReminder: true,
       reminderTimes: [const Duration(minutes: 30)],
     );
-
+    
+    print('Creating meeting: ${meeting.title} at ${meeting.dateTime}'); // Dodane logowanie
     await _dbHelper.createMeeting(meeting);
+  } catch (e) {
+    print('Error in MeetingProcess.add: $e');
+    throw Exception('Failed to add meeting: $e');
   }
+}
 
   Future<void> delete(Map<String, dynamic> params, int userId) async {
     try {

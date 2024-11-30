@@ -14,20 +14,18 @@ class ClientListView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Expanded(
-      child: ListView.builder(
-        itemCount: clients.length,
-        itemBuilder: (context, index) {
-          final client = clients[index];
-          return ListTile(
-            title: Text(client.name),
-            subtitle: Text(client.company ?? ''),
-            leading: ClientCategoryIcon(category: client.category),
-            trailing: const Icon(Icons.arrow_forward_ios),
-            onTap: () => onClientSelected(client),
-          );
-        },
-      ),
+    return ListView.builder(
+      itemCount: clients.length,
+      itemBuilder: (context, index) {
+        final client = clients[index];
+        return ListTile(
+          title: Text(client.name),
+          subtitle: Text(client.company ?? ''),
+          leading: ClientCategoryIcon(category: client.category),
+          trailing: const Icon(Icons.arrow_forward_ios),
+          onTap: () => onClientSelected(client),
+        );
+      },
     );
   }
 }

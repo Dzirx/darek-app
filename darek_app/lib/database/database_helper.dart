@@ -109,10 +109,35 @@ class DatabaseHelper {
   }
 
   // Metody dla spotkań
-  Future<int> createMeeting(Meeting meeting) async {
+Future<int> createMeeting(Meeting meeting) async {
+  try {
+    print('Creating meeting in DB: ${meeting.toMap()}'); // Dodane logowanie
     final db = await database;
-    return await db.insert('meetings', meeting.toMap());
+    
+    // Sprawdź czy data nie jest w przeszłości
+    if (meeting.dateTime.isBefore(DateTime.now())) {
+      throw Exception('Cannot create meeting in the past');
+    }
+    
+    // Sprawdź konflikty
+    final conflicts = await db.query(
+      'meetings',
+      where: 'userId = ? AND dateTime = ?',
+      whereArgs: [meeting.userId, meeting.dateTime.toIso8601String()],
+    );
+    
+    if (conflicts.isNotEmpty) {
+      throw Exception('Meeting time conflict detected');
+    }
+    
+    final id = await db.insert('meetings', meeting.toMap());
+    print('Successfully created meeting with ID: $id'); // Dodane logowanie
+    return id;
+  } catch (e) {
+    print('Error in DatabaseHelper.createMeeting: $e');
+    rethrow;
   }
+}
 
   Future<Meeting?> getMeeting(int id) async {
     final db = await database;

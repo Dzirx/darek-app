@@ -248,11 +248,17 @@ class _SalesScreenState extends State<SalesScreen> {
     ),
   );
 }
-  Future<void> _editSale(Sale sale) async {
+
+Future<void> _editSale(Sale sale) async {
   final amountController = TextEditingController(text: sale.amount.toString());
   final descriptionController = TextEditingController(text: sale.description);
-  Client? selectedClient = await _dbHelper.getClientByName(sale.clientName);
   List<Client> clients = await _dbHelper.getRecentClients(widget.userId, limit: 100);
+  
+  // Znajdź aktualnego klienta
+  Client selectedClient = clients.firstWhere(
+    (client) => client.name == sale.clientName,
+    orElse: () => clients.first,
+  );
 
   await showDialog(
     context: context,
@@ -262,17 +268,30 @@ class _SalesScreenState extends State<SalesScreen> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            DropdownButtonFormField<Client>(
-              value: selectedClient,
-              items: clients.map((client) => DropdownMenuItem(value: client, child: Text(client.name))).toList(),
-              onChanged: (value) => selectedClient = value,
-              decoration: const InputDecoration(labelText: 'Klient'),
+            StatefulBuilder(
+              builder: (context, setState) => DropdownButtonFormField<String>(
+                value: selectedClient.name,
+                items: clients.map((client) => 
+                  DropdownMenuItem(
+                    value: client.name,
+                    child: Text(client.name),
+                  )
+                ).toList(),
+                onChanged: (value) {
+                  if (value != null) {
+                    selectedClient = clients.firstWhere((c) => c.name == value);
+                  }
+                },
+                decoration: const InputDecoration(labelText: 'Klient'),
+              ),
             ),
+            const SizedBox(height: 8),
             TextField(
               controller: amountController,
               decoration: const InputDecoration(labelText: 'Kwota (zł)'),
               keyboardType: TextInputType.number,
             ),
+            const SizedBox(height: 8),
             TextField(
               controller: descriptionController,
               decoration: const InputDecoration(labelText: 'Opis'),
@@ -282,18 +301,17 @@ class _SalesScreenState extends State<SalesScreen> {
         ),
       ),
       actions: [
-        TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Anuluj')),
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Anuluj'),
+        ),
         TextButton(
           onPressed: () async {
-            if (selectedClient == null) {
-              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Wybierz klienta')));
-              return;
-            }
             try {
               final updatedSale = Sale(
                 id: sale.id,
                 amount: double.parse(amountController.text),
-                clientName: selectedClient!.name,
+                clientName: selectedClient.name,
                 dateTime: sale.dateTime,
                 description: descriptionController.text,
                 userId: widget.userId,
@@ -303,7 +321,10 @@ class _SalesScreenState extends State<SalesScreen> {
               Navigator.of(context).pop();
               _loadSales();
             } catch (e) {
-              ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Błąd: $e')));
+              if (!context.mounted) return;
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text('Błąd: $e'))
+              );
             }
           },
           child: const Text('Zapisz'),

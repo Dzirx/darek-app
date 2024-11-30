@@ -11,9 +11,24 @@ class InteractiveNoteProcessor {
 
   Future<Map<String, dynamic>> processCommand(String command, int userId) async {
     try {
-      if (_isWaitingForContent && _selectedClient != null) {
+    if (_isWaitingForContent) {
+      final normalizedCommand = command.toLowerCase();
+      if (normalizedCommand.contains('anuluj') || 
+          normalizedCommand.contains('wyjdź') ||
+          normalizedCommand.contains('wyjść') ||
+          normalizedCommand.contains('zakończ')) {
+        _resetState();
+        return {
+          'success': true,
+          'message': 'Anulowano dodawanie notatki.',
+          'awaitingResponse': false
+        };
+      }
+      
+      if (_selectedClient != null) {
         return await _createNote(command, userId);
       }
+    }
 
       // Rozpoznawanie różnych wariantów komend
       final normalizedCommand = command.toLowerCase();
@@ -41,7 +56,7 @@ class InteractiveNoteProcessor {
 
         return {
           'success': true,
-          'message': 'Znaleziono klienta ${_selectedClient!.name}. Możesz teraz podyktować treść notatki.',
+          'message': 'Znaleziono klienta ${_selectedClient!.name}.  Możesz teraz podyktować treść notatki lub powiedz "anuluj" aby wyjść.',
           'awaitingResponse': true
         };
       }
@@ -86,58 +101,63 @@ class InteractiveNoteProcessor {
     return '';
   }
 
-  Future<List<Client>> _searchClients(String query, int userId) async {
-    // Usuń zbędne słowa i znaki
-    query = query.replaceAll(RegExp(r'(firmy|klienta)\s+'), '').trim();
-    
-    final clients = await _dbHelper.searchClients(query, userId);
-    if (clients.isEmpty) {
-      // Spróbuj wyszukać częściowo
-      return await _dbHelper.searchClients(
-        query.split(' ').first, 
-        userId
-      );
-    }
-    return clients;
+Future<List<Client>> _searchClients(String query, int userId) async {
+  // Usuń zbędne słowa i znaki
+  query = query.toLowerCase()
+    .replaceAll(RegExp(r'(firmy|klienta)\s+'), '')
+    .trim();
+  
+  final clients = await _dbHelper.searchClients(query, userId);
+  
+  // Jeśli znaleziono dokładne dopasowanie, użyj go
+  final exactMatch = clients.where((c) => 
+    c.name.toLowerCase() == query || 
+    (c.company?.toLowerCase() ?? '') == query
+  ).toList();
+  
+  if (exactMatch.isNotEmpty) {
+    return exactMatch;
   }
-  Future<Map<String, dynamic>> _createNote(String content, int userId) async {
+  
+  // Jeśli nie, zwróć wszystkie częściowe dopasowania
+  return clients;
+}
+
+Future<Map<String, dynamic>> _createNote(String content, int userId) async {
     try {
-      if (_selectedClient == null) {
-        throw Exception('Nie wybrano klienta');
-      }
+        if (_selectedClient == null) {
+            throw Exception('Nie wybrano klienta');
+        }
 
-      // Tworzenie notatki
-      final note = ClientNote(
-        clientId: _selectedClient!.id!,
-        content: content,
-        createdAt: DateTime.now(),
-        userId: userId,
-        type: _determineNoteType(content),
-        importance: _determineImportance(content),
-        tags: _generateTags(content),
-      );
+        final note = ClientNote(
+            clientId: _selectedClient!.id!,
+            content: content,
+            createdAt: DateTime.now(),
+            userId: userId,
+            type: _determineNoteType(content),
+            importance: _determineImportance(content),
+            tags: _generateTags(content),
+        );
 
-      // Zapisywanie notatki
-      await _dbHelper.createNote(note);
+        await _dbHelper.createNote(note);
+        final response = _generateResponse(note);
+        _resetState();
 
-      // Resetowanie stanu
-      final response = _generateResponse(note);
-      _resetState();
-
-      return {
-        'success': true,
-        'message': response,
-        'awaitingResponse': false
-      };
+        return {
+            'success': true,
+            'message': response,
+            'awaitingResponse': false
+        };
     } catch (e) {
-      _resetState();
-      return {
-        'success': false,
-        'message': 'Błąd podczas zapisywania notatki: $e',
-        'awaitingResponse': false
-      };
+        _resetState();
+        return {
+            'success': false,
+            'message': 'Błąd podczas zapisywania notatki: $e',
+            'awaitingResponse': false
+        };
     }
-  }
+}
+   
 
   void _resetState() {
     _selectedClient = null;
