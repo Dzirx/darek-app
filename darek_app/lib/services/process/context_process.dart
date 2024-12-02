@@ -11,12 +11,21 @@ class ContextProcess {
     final now = DateTime.now();
     final endDate = now.add(const Duration(days: 30));
     final startDate = now.subtract(const Duration(days: 30));
+    final threeMonthsAgo = DateTime(now.year, now.month - 3, now.day);
+
 
     final meetings = await _dbHelper.getMeetingsForPeriod(
       userId, 
       startDate,
       endDate,
     );
+
+    final sales = await _dbHelper.getSalesForUser(
+      userId, 
+      startDate: threeMonthsAgo,
+      endDate: now,
+    );
+
 
     final clients = await _dbHelper.getRecentClients(userId);
     final notes = await _dbHelper.getRecentNotes(userId);
@@ -47,6 +56,13 @@ class ContextProcess {
         'createdAt': n.createdAt.toIso8601String(),
         'formatted_date': formatter.format(n.createdAt),
       }).toList(),
+
+      'sales': sales.map((s) => {
+        'clientName': s.clientName,
+        'amount': s.amount,
+        'dateTime': s.dateTime.toIso8601String(),
+      }).toList(),
+      'total_sales': sales.fold(0.0, (sum, sale) => sum + sale.amount),
     };
   }
 }
