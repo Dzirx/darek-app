@@ -3,7 +3,7 @@ import 'dart:convert';
 import 'package:intl/intl.dart';
 
 class OpenAIProcess {
-  final String _apiKey = 'sk-w5-PlSSZJvpa6jRYChA1-8Q2pOPDa2R46IL17pMCWwT3BlbkFJMIgIBPbjSkc-dgHJC_eyHFqRHGehI6Wm7hHHOGrx0A';
+  final String _apiKey = '';
   final String _baseUrl = 'https://api.openai.com/v1/chat/completions';
 
   Future<Map<String, dynamic>> getResponse(String command, Map<String, dynamic> context) async {
